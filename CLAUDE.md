@@ -79,7 +79,13 @@ Las categorías de recetas no tienen defaults: `syncCatsConRecetas()` las deriva
 
 Antes las cuatro listas estaban escritas a mano por separado y se desincronizaron: a la de timestamps le faltaba `jonnhys_cat_recetas`, así que tras un PUSH su `_ts` local quedaba viejo y el siguiente PULL pisaba las categorías locales aunque fueran más nuevas. Si vuelves a escribir una lista de claves a mano, reintroduces esa clase de bug.
 
-El backend guarda en `PropertiesService.getScriptProperties()`, no en celdas de la hoja.
+El backend (`Code.gs`) guarda en las celdas de una hoja `_datos`, con columnas `clave | parte | partes | ts | valor`. Un valor que no cabe en una celda se parte en varias filas y se vuelve a unir al leer, así que no hay tope práctico de tamaño. Detalles que no hay que romper:
+
+- La columna `valor` se escribe con formato `@` (texto). Sin eso, un trozo que empiece con `=` o `+` se guardaría como fórmula y corrompería el JSON.
+- `doPost` toma un `LockService`: dos dispositivos sincronizando a la vez entrelazarían sus escrituras.
+- `migrarSiHaceFalta_()` copia una sola vez lo que hubiera en `ScriptProperties` (donde guardaba la versión anterior) y deja esa copia como respaldo. `borrarDatosAntiguos()` la elimina, y se ejecuta a mano desde el editor.
+
+El contrato HTTP con la app no cambió — `POST {action:'saveAll', …}` y `GET ?action=load` → `{ok, data:{clave:{value, ts}}}` —, así que el backend se puede reescribir sin tocar `index.html`.
 
 ### Autenticación
 
