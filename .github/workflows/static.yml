@@ -33,10 +33,6 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Pages
         uses: actions/configure-pages@v5
-        with:
-          # Activa GitHub Pages en el repo si aún no lo está, en vez de
-          # exigir configurarlo a mano en Settings → Pages.
-          enablement: true
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
