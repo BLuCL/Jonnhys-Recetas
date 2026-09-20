@@ -4610,14 +4610,29 @@ function saveAndSync() {
   syncData();
 }
 
+/* ── Claves que viajan a Sheets ─────────────────────────── */
+/* Fuente única: el PUSH, los timestamps, el PULL y la desconexión
+   se derivan todos de acá. Antes cada uno tenía su propia copia de
+   la lista y se desincronizaron (a los timestamps les faltaba
+   cat_recetas, así que el PULL siguiente pisaba las categorías
+   locales aunque fueran más nuevas).
+   Para agregar una clave: súmala acá y a SYNC_KEYS en Code.gs. */
+const SYNC_SOURCES = {
+  jonnhys_insumos:     () => getInsumos()    || DEFAULTS_INSUMOS,
+  jonnhys_recetas:     () => getRecetas()    || DEFAULTS_RECETAS,
+  jonnhys_gastos:      () => getGastos()     || DEFAULTS_GASTOS,
+  jonnhys_personal:    () => getPersonal()   || [],
+  jonnhys_cat_recetas: () => getCatRecetas() || [],
+};
+const SYNC_KEYS = Object.keys(SYNC_SOURCES);
+
 /* ── Desconectar ────────────────────────────────────────── */
 function disconnectSheets() {
   if (!confirm('¿Desconectar Google Sheets?\nLos datos locales no se borrarán.')) return;
   SHEETS_URL = '';
   localStorage.removeItem('jonnhys_sheets_url');
   localStorage.removeItem('jonnhys_last_sync');
-  ['jonnhys_insumos','jonnhys_recetas','jonnhys_gastos','jonnhys_personal','jonnhys_cat_recetas']
-    .forEach(k => localStorage.removeItem(k + '_ts'));
+  SYNC_KEYS.forEach(k => localStorage.removeItem(k + '_ts'));
   setSyncState('offline');
   document.getElementById('settingsUrl').value = '';
   refreshSyncInfo();
@@ -4648,14 +4663,8 @@ async function syncData() {
 
   setSyncState('syncing');
   try {
-    const payload = {
-      action:              'saveAll',
-      jonnhys_insumos:      getInsumos()    || DEFAULTS_INSUMOS,
-      jonnhys_recetas:      getRecetas()    || DEFAULTS_RECETAS,
-      jonnhys_gastos:       getGastos()     || DEFAULTS_GASTOS,
-      jonnhys_personal:     getPersonal()   || [],
-      jonnhys_cat_recetas:  getCatRecetas() || [],
-    };
+    const payload = { action: 'saveAll' };
+    SYNC_KEYS.forEach(k => { payload[k] = SYNC_SOURCES[k](); });
 
     const res  = await fetch(SHEETS_URL, {
       method:   'POST',
@@ -4669,8 +4678,7 @@ async function syncData() {
 
     const now = new Date().toISOString();
     localStorage.setItem('jonnhys_last_sync', now);
-    ['jonnhys_insumos','jonnhys_recetas','jonnhys_gastos','jonnhys_personal']
-      .forEach(k => localStorage.setItem(k + '_ts', now));
+    SYNC_KEYS.forEach(k => localStorage.setItem(k + '_ts', now));
 
     setSyncState('ok');
     refreshSyncInfo();
@@ -4693,13 +4701,9 @@ async function loadFromSheets() {
     const json = await res.json();
     if (!json.ok) throw new Error(json.error);
 
-    const keys = [
-      'jonnhys_insumos', 'jonnhys_recetas', 'jonnhys_gastos',
-      'jonnhys_personal', 'jonnhys_cat_recetas',
-    ];
     let updated = false;
 
-    keys.forEach(key => {
+    SYNC_KEYS.forEach(key => {
       const remote = json.data?.[key];
       if (!remote?.value) return;
       const localTs  = localStorage.getItem(key + '_ts') || '0';

@@ -72,11 +72,12 @@ Las categorías de recetas no tienen defaults: `syncCatsConRecetas()` las deriva
 
 `syncData()` hace PUSH de todo el estado; `loadFromSheets()` hace PULL al arrancar. La resolución de conflictos es por timestamp ISO: se compara `localStorage[key + '_ts']` contra el `ts` remoto y **gana el más reciente**, clave por clave.
 
-Al agregar una clave nueva a la sincronización hay que tocar **cuatro** lugares, o la clave se sincroniza a medias:
-1. El `payload` de `syncData()` (Part 6)
-2. El array de timestamps que se escriben tras un PUSH exitoso (Part 6)
-3. El array `keys` de `loadFromSheets()` (Part 6)
-4. `SYNC_KEYS` en `Code.gs` — y después **volver a desplegar el Apps Script** ("Implementar → Administrar implementaciones → Nueva versión"), porque el script no se actualiza solo.
+`SYNC_SOURCES` (Part 6) es la **fuente única** de qué claves viajan: mapea cada clave a la función que produce su valor, y de ahí salen el payload del PUSH, los timestamps, el PULL y la limpieza de `disconnectSheets()`. Para agregar una clave a la sincronización bastan **dos** cambios:
+
+1. Sumarla a `SYNC_SOURCES` (Part 6)
+2. Sumarla a `SYNC_KEYS` en `Code.gs` — y después **volver a desplegar el Apps Script** ("Implementar → Administrar implementaciones → Nueva versión"), porque el script no se actualiza solo.
+
+Antes las cuatro listas estaban escritas a mano por separado y se desincronizaron: a la de timestamps le faltaba `jonnhys_cat_recetas`, así que tras un PUSH su `_ts` local quedaba viejo y el siguiente PULL pisaba las categorías locales aunque fueran más nuevas. Si vuelves a escribir una lista de claves a mano, reintroduces esa clase de bug.
 
 El backend guarda en `PropertiesService.getScriptProperties()`, no en celdas de la hoja.
 
