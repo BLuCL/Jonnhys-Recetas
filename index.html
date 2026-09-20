@@ -4628,6 +4628,22 @@ const SYNC_SOURCES = {
 };
 const SYNC_KEYS = Object.keys(SYNC_SOURCES);
 
+/* Marca una clave como recién modificada acá, para que el PULL no la pise
+   con una versión anterior del servidor. El reloj de este equipo puede ir
+   atrasado respecto del de Google, así que forzamos que la marca siempre
+   avance sobre la que ya teníamos: si no, una edición local podría quedar
+   "más vieja" que el dato en que se basa y se perdería. */
+function tocarClaveSync(key) {
+  try {
+    const previo = localStorage.getItem(key + '_ts') || '';
+    let ahora = new Date().toISOString();
+    if (previo && ahora <= previo) {
+      ahora = new Date(new Date(previo).getTime() + 1000).toISOString();
+    }
+    localStorage.setItem(key + '_ts', ahora);
+  } catch (_) {}
+}
+
 /* ── Desconectar ────────────────────────────────────────── */
 function disconnectSheets() {
   if (!confirm('¿Desconectar Google Sheets?\nLos datos locales no se borrarán.')) return;
@@ -4665,6 +4681,12 @@ async function syncData() {
 
   setSyncState('syncing');
   try {
+    /* Bajar antes de subir. Si otro dispositivo dejó algo más nuevo, se
+       incorpora acá en vez de quedar pisado por lo que mandemos ahora.
+       Las ediciones locales ganan igual, porque tocarClaveSync() les puso
+       una marca más reciente. */
+    await loadFromSheets({ silencioso: true });
+
     const payload = { action: 'saveAll' };
     SYNC_KEYS.forEach(k => { payload[k] = SYNC_SOURCES[k](); });
 
@@ -4678,7 +4700,9 @@ async function syncData() {
     const json = await res.json().catch(() => ({ ok:false, error:'Respuesta inesperada del servidor' }));
     if (!json.ok) throw new Error(json.error || 'Error del servidor');
 
-    const now = new Date().toISOString();
+    // La hora del servidor es la que quedó guardada allá; usar la local
+    // desalinearía las comparaciones del próximo PULL.
+    const now = json.ts || new Date().toISOString();
     localStorage.setItem('jonnhys_last_sync', now);
     SYNC_KEYS.forEach(k => localStorage.setItem(k + '_ts', now));
 
@@ -4695,9 +4719,12 @@ async function syncData() {
 }
 
 /* ── PULL: cargar desde Sheets al abrir la app ──────────── */
-async function loadFromSheets() {
+async function loadFromSheets(opts) {
   if (!SHEETS_URL) return;
-  setSyncState('syncing');
+  // En modo silencioso no toca el indicador: lo usan el chequeo periódico
+  // y el PULL previo al PUSH, que no deben hacer parpadear el botón.
+  const silencioso = !!(opts && opts.silencioso);
+  if (!silencioso) setSyncState('syncing');
   try {
     const res  = await fetch(SHEETS_URL + '?action=load', { redirect:'follow' });
     const json = await res.json();
@@ -4717,7 +4744,7 @@ async function loadFromSheets() {
       }
     });
 
-    setSyncState('ok');
+    if (!silencioso) setSyncState('ok');
 
     if (updated) {
       renderInsumos();
@@ -4731,7 +4758,7 @@ async function loadFromSheets() {
     }
 
   } catch (err) {
-    setSyncState(SHEETS_URL ? 'offline' : 'ok');
+    if (!silencioso) setSyncState(SHEETS_URL ? 'offline' : 'ok');
     console.warn('[Jonnhys] No se pudo conectar con Sheets:', err.message);
   }
 }
@@ -4813,20 +4840,45 @@ function scheduleSync() {
   // Indicador visual "pendiente"
   const lbl = document.getElementById('syncLabel');
   if (lbl) lbl.textContent = 'Guardando…';
-  _autoSyncTimer = setTimeout(() => syncData(), 2500);
+  _autoSyncTimer = setTimeout(() => { _autoSyncTimer = null; syncData(); }, 2500);
 }
 
 /* Envolver los setters para disparar auto-sync en cada cambio */
 (function wrapSetters() {
-  ['setInsumos', 'setRecetas', 'setGastos', 'setPersonal'].forEach(name => {
+  /* setCatRecetas faltaba acá: por eso las categorías se guardaban en el
+     dispositivo pero nunca se subían solas. */
+  const SETTERS = {
+    setInsumos:    'jonnhys_insumos',
+    setRecetas:    'jonnhys_recetas',
+    setGastos:     'jonnhys_gastos',
+    setPersonal:   'jonnhys_personal',
+    setCatRecetas: 'jonnhys_cat_recetas',
+  };
+  Object.keys(SETTERS).forEach(name => {
     const orig = window[name];
     if (!orig) return;
     window[name] = function(d) {
       orig(d);
+      tocarClaveSync(SETTERS[name]);
       scheduleSync();
     };
   });
 })();
+
+/* ── 3. Revisar cambios remotos sin recargar ────────────── */
+/* La app solo bajaba datos al arrancar, así que una pestaña abierta en el
+   computador no veía lo que se cambiaba desde el teléfono hasta recargar. */
+function revisarRemoto() {
+  if (!SHEETS_URL) return;
+  if (document.hidden) return;
+  if (_autoSyncTimer) return;   // hay cambios locales sin subir todavía
+  loadFromSheets({ silencioso: true });
+}
+
+setInterval(revisarRemoto, 60000);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) revisarRemoto();
+});
 
 /* ── MÓDULO CONFIGURACIÓN ───────────────────────────────── */
 const KEY_CONFIG      = 'jonnhys_config';
