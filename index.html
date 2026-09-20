@@ -4556,10 +4556,12 @@ function exportEquilibrio() {
 ======================================================== -->
 <script>
 
-/* Sin URL por defecto: cada negocio debe desplegar su propio Apps Script
-   (Code.gs) y pegar la URL en Configuración → Google Sheets. Mientras esté
-   vacía, la app funciona solo con los datos de este dispositivo. */
-let SHEETS_URL = localStorage.getItem('jonnhys_sheets_url') || '';
+/* Apps Script propio de Jonnhys, para que cada dispositivo nuevo sincronice
+   sin configurar nada. Es el de ESTE negocio: no pegar acá el de otro local,
+   porque los datos de ambos se mezclarían.
+   Se puede sobrescribir desde Configuración → Google Sheets. */
+let SHEETS_URL = localStorage.getItem('jonnhys_sheets_url') ||
+  'https://script.google.com/macros/s/AKfycbzQEYMFa_3awez-U2co0L0MO3zLyEt2bdNjxHpgVt0Z-xmLwT75immqqGxR6sTx-eDn/exec';
 
 /* ── Pestañas verticales de Configuración ───────────────── */
 function switchConfigSection(name) {
